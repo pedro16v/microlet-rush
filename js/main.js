@@ -1,5 +1,5 @@
 (() => {
-  const designWidth = 480;
+  const designWidth = 500;
   const designHeight = 800;
 
   const config = {
@@ -7,10 +7,14 @@
     parent: 'game',
     backgroundColor: '#1a1a1a',
     scale: {
-      mode: Phaser.Scale.ENVELOP,
+      mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
       width: designWidth,
       height: designHeight,
+      max: {
+        width: 500,
+        height: 800,
+      },
     },
     physics: {
       default: 'arcade',
