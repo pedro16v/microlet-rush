@@ -1,260 +1,433 @@
+// Main gameplay. Generic and data-driven: everything specific to a stage comes
+// from LEVELS[levelIndex]. Owns score/damage/distance/combo; delegates the
+// vehicle to Player and spawning to Spawner. UIScene reads this.hud each frame.
 class GameScene extends Phaser.Scene {
     constructor() {
         super({ key: 'GameScene' });
-        this.score = 0;
-        this.damage = 0; // Initialize damage
-        this.isGameOver = false; // Game over flag
-        this.gameSpeed = 300; // Base speed in pixels per second
+    }
+
+    init(data) {
+        // ALL per-run state lives here so restarts/next-level start clean.
+        this.levelIndex = data.levelIndex || 0;
+        this.level = LEVELS[this.levelIndex];
+        this.vehicle = getVehicle(data.vehicleId);
+        this.carriedScore = data.score || 0;
+
+        this.score = this.carriedScore;
+        this.damage = 0;
+        this.maxDamage = 100;
+        this.distance = 0;
+        this.passengers = 0;
+
+        this.gameSpeed = this.level.startSpeed;
+        this.elapsed = 0;
         this.spawnTimer = 0;
-        this.spawnInterval = 2000; // Milliseconds
+
+        this.combo = 0; // chain count; multiplier applied = max(1, combo)
+        this.comboTimer = 0;
+        this.comboWindow = 3000;
+
+        this.isGameOver = false;
+        this.isComplete = false;
+
+        this.hud = {};
     }
 
     create() {
-        // Log camera properties
-        const cam = this.cameras.main;
-        console.log(`Camera properties: x=${cam.x}, y=${cam.y}, scrollX=${cam.scrollX}, scrollY=${cam.scrollY}, width=${cam.width}, height=${cam.height}, zoom=${cam.zoom}`);
+        this.audio = this.registry.get('audio');
+        this.save = this.registry.get('save');
 
-        // Create background layers for parallax effect
-        this.createBackground();
-        
-        // Create player microlet
-        this.createPlayer();
-        
-        // Set up obstacles and pickups groups
-        this.obstacles = this.add.group();
-        this.pickups = this.add.group();
-        
-        // Set up input handling
+        this.bounds = { top: GameConfig.ROAD_TOP_Y, bottom: GameConfig.ROAD_BOTTOM_Y };
+        this.cameras.main.setBackgroundColor(this.level.theme.sky || '#000000');
+
+        this._createBackground();
+
+        // groups
+        this.obstacles = this.physics.add.group();
+        this.pickups = this.physics.add.group();
+
+        // player + systems
+        const startY = (this.bounds.top + this.bounds.bottom) / 2;
+        this.player = new Player(this, 200, startY, this.vehicle, this.bounds);
+        this.spawner = new Spawner(this, this.level, this.bounds);
+
+        this._createParticles();
+
+        // input
         this.cursors = this.input.keyboard.createCursorKeys();
-        this.wasd = this.input.keyboard.addKeys({
-            up: Phaser.Input.Keyboard.KeyCodes.W,
-            down: Phaser.Input.Keyboard.KeyCodes.S,
-            left: Phaser.Input.Keyboard.KeyCodes.A,
-            right: Phaser.Input.Keyboard.KeyCodes.D
-        });
-        
-        // Start UI scene
+        this.wasd = this.input.keyboard.addKeys({ up: 'W', down: 'S', left: 'A', right: 'D' });
+        this.input.keyboard.on('keydown-ESC', () => this._pause());
+        this.input.keyboard.on('keydown-P', () => this._pause());
+
+        // collisions
+        this.physics.add.overlap(this.player.sprite, this.pickups, this._collectPickup, null, this);
+        this.physics.add.overlap(this.player.sprite, this.obstacles, this._hitObstacle,
+            (p, o) => !this.player.isInvulnerable(this.time.now) || this.player.isPowerupActive('pw_shield', this.time.now), this);
+
+        // HUD
+        this._updateHud();
         this.scene.launch('UIScene');
+
+        // music
+        this.audio.unlock();
+        if (!this.audio.muted) this.audio.startMusic(this.level.musicScale, 300);
+        this.audio.setMusicIntensity(1);
+
+        // intro banner
+        this._banner(this.level.name, this.level.subtitle);
+
+        this.events.on('shutdown', this._onShutdown, this);
     }
 
-    createBackground() {
-        const gameWidth = this.game.config.width;
-        const gameHeight = this.game.config.height; // 600
-        const backgroundScale = 0.5; 
+    _createBackground() {
+        const w = GameConfig.WIDTH;
+        const roadTop = this.bounds.top;
+        const roadH = this.bounds.bottom - this.bounds.top;
+        this.bgLayers = [];
 
-        // Define vertical layout (Buildings + Road Only)
-        const buildingsHeight = 300; 
-        const roadHeight = 300;      
-
-        // Calculate Y positions for the *center* of each band
-        const buildingsCenterY = buildingsHeight / 2;                     // 150
-        const roadCenterY = buildingsCenterY + buildingsHeight / 2 + roadHeight / 2; // 150 + 150 + 150 = 450
-        
-        // Calculate the *bottom* Y coordinate for each band
-        const buildingsBottomY = buildingsCenterY + buildingsHeight / 2; // 150 + 150 = 300
-        const roadBottomY = roadCenterY + roadHeight / 2;       // 450 + 150 = 600
-
-        /* // --- Sky (Still Commented out) ---
-        if (skyHeight > 0) { 
-            this.bgSky = this.add.tileSprite(gameWidth / 2, skyY, gameWidth, skyHeight, 'bg_sky');
-            this.bgSky.setTileScale(backgroundScale);
-            this.bgSky.setDepth(0); 
-        } else {
-            this.bgSky = null; 
-        }
-        */
-       this.bgSky = null; 
-        
-       /* // --- Mountains (Commented out) ---
-        this.bgMountains = this.add.tileSprite(gameWidth / 2, mountainsBottomY, gameWidth, mountainsHeight, 'bg_mountains');
-        this.bgMountains.setOrigin(0.5, 1); // Align bottom edge
-        const mountainsTextureHeight = this.bgMountains.texture?.source[0]?.height || mountainsHeight;
-        const mountainsTileScaleY = mountainsHeight / mountainsTextureHeight;
-        this.bgMountains.setTileScale(backgroundScale, mountainsTileScaleY); 
-        this.bgMountains.setDepth(0); 
-        */
-       this.bgMountains = null; 
-
-        // Buildings (Depth 1)
-        this.bgBuildings = this.add.tileSprite(gameWidth / 2, buildingsBottomY, gameWidth, buildingsHeight, 'bg_buildings');
-        this.bgBuildings.setOrigin(0.5, 1); // Align bottom edge
-        const buildingsTextureHeight = this.bgBuildings.texture?.source[0]?.height || buildingsHeight;
-        const buildingsTileScaleY = buildingsHeight / buildingsTextureHeight;
-        this.bgBuildings.setTileScale(backgroundScale, buildingsTileScaleY); 
-        this.bgBuildings.setDepth(1); 
-
-        /* // --- Roadside objects (Still Commented out) ---
-        this.bgRoadside = this.add.tileSprite(gameWidth / 2, roadsideY, gameWidth, roadsideHeight, 'bg_roadside');
-        this.bgRoadside.setTileScale(backgroundScale);
-        this.bgRoadside.setDepth(2); 
-        */
-       this.bgRoadside = null; 
-
-        // Road (Depth 2) - Reverted to standard tileSprite
-        this.road = this.add.tileSprite(gameWidth / 2, roadBottomY, gameWidth, roadHeight, 'road');
-        this.road.setOrigin(0.5, 1); 
-        const roadTextureHeight = this.road.texture?.source[0]?.height || roadHeight; 
-        const roadTileScaleY = roadHeight / roadTextureHeight; 
-        this.road.setTileScale(backgroundScale, roadTileScaleY); 
-        this.road.setDepth(2); 
-        // No setImmovable or setVelocityX for standard tileSprite
-        
-        // Store road bounds based on new Y (600) and Height (300)
-        this.roadTopY = roadBottomY - roadHeight; // 600 - 300 = 300
-        this.roadBottomY = roadBottomY; // 600 
+        this.level.theme.layers.forEach((def, i) => {
+            let ts;
+            if (def.mode === 'fill') {
+                ts = this.add.tileSprite(w / 2, GameConfig.HEIGHT / 2, w, GameConfig.HEIGHT, def.key);
+            } else if (def.mode === 'road') {
+                ts = this.add.tileSprite(w / 2, this.bounds.bottom, w, roadH, def.key).setOrigin(0.5, 1);
+                const th = ts.texture.source[0].height;
+                ts.setTileScale(0.5, roadH / th);
+            } else { // bottom
+                const hgt = def.height || 200;
+                ts = this.add.tileSprite(w / 2, roadTop, w, hgt, def.key).setOrigin(0.5, 1);
+                const th = ts.texture.source[0].height;
+                ts.setTileScale(0.5, hgt / th);
+            }
+            ts.setDepth(i);
+            if (this.level.theme.tint && this.level.theme.tint !== 0xffffff) {
+                ts.setTint(this.level.theme.tint);
+            }
+            this.bgLayers.push({ ts: ts, factor: def.factor });
+        });
     }
 
-    createPlayer() {
-        // Adjust starting Y and bounds to be on the new road (center Y = 450)
-        const startY = this.roadTopY + (this.roadBottomY - this.roadTopY) / 2; // Center on road (y=450)
-        this.player = this.physics.add.sprite(200, startY, 'microlet_silver'); 
-        this.player.setDisplaySize(128, 64); // Using user's size
-        this.player.setDepth(5); 
-        
-        this.player.setCollideWorldBounds(true); 
-        
-        // Set player properties based on new road bounds (300-600)
-        this.player.speed = 200;
-        this.player.minY = this.roadTopY + 10; // 300 + 10 = 310
-        this.player.maxY = this.roadBottomY - 10; // 600 - 10 = 590
-        // console.log("Player sprite created at:", this.player.x, this.player.y, "with texture:", this.player.texture.key);
-        // console.log("Player display size (forced):", this.player.displayWidth, "x", this.player.displayHeight);
-        // console.log("Player source texture size:", this.player.texture.source[0].width, "x", this.player.texture.source[0].height);
+    _createParticles() {
+        this.exhaust = this.add.particles(0, 0, 'px', {
+            lifespan: 380, speedX: { min: -60, max: -140 }, speedY: { min: -20, max: 20 },
+            scale: { start: 2.2, end: 0 }, alpha: { start: 0.5, end: 0 },
+            tint: 0x555555, frequency: 55, quantity: 1
+        });
+        this.exhaust.setDepth(5);
+        this.exhaust.startFollow(this.player.sprite, -52, 12);
+
+        this.sparks = this.add.particles(0, 0, 'px', {
+            lifespan: 500, speed: { min: 60, max: 180 }, scale: { start: 3, end: 0 },
+            alpha: { start: 1, end: 0 }, tint: [0xffe24d, 0xfff7b0], blendMode: 'ADD', emitting: false
+        });
+        this.sparks.setDepth(8);
+
+        this.smoke = this.add.particles(0, 0, 'px', {
+            lifespan: 650, speed: { min: 40, max: 150 }, scale: { start: 4, end: 0 },
+            alpha: { start: 0.85, end: 0 }, tint: [0x888888, 0xffffff], emitting: false
+        });
+        this.smoke.setDepth(8);
     }
 
     update(time, delta) {
-        if (this.isGameOver) {
-            return; // Stop updates if game is over
+        if (this.isGameOver || this.isComplete) return;
+        const dt = delta / 1000;
+        this.elapsed += dt;
+
+        // difficulty ramp
+        this.gameSpeed = Math.min(this.level.maxSpeed, this.gameSpeed + this.level.speedRamp * dt);
+        const boost = this.player.isPowerupActive('pw_boost', time) ? 1.5 : 1;
+        const effSpeed = this.gameSpeed * boost;
+
+        // parallax
+        for (let i = 0; i < this.bgLayers.length; i++) {
+            this.bgLayers[i].ts.tilePositionX += effSpeed * this.bgLayers[i].factor * dt;
         }
-        
-        const deltaSeconds = delta / 1000;
-        
-        // Parallax scrolling (Mountains removed, Road manual update restored)
-        // if (this.bgSky) this.bgSky.tilePositionX += this.gameSpeed * 0.1 * deltaSeconds;
-        // if (this.bgMountains) this.bgMountains.tilePositionX += this.gameSpeed * 0.3 * deltaSeconds; 
-        if (this.bgBuildings) this.bgBuildings.tilePositionX += this.gameSpeed * 0.5 * deltaSeconds;
-        // if (this.bgRoadside) this.bgRoadside.tilePositionX += this.gameSpeed * 0.8 * deltaSeconds;
-        if (this.road) this.road.tilePositionX += this.gameSpeed * deltaSeconds; // RESTORED manual tilePosition update
-        
-        // Handle player movement
-        this.handlePlayerMovement();
-        
-        // Spawn obstacles and pickups
+
+        // input -> player
+        const input = {
+            left: this.cursors.left.isDown || this.wasd.left.isDown,
+            right: this.cursors.right.isDown || this.wasd.right.isDown,
+            up: this.cursors.up.isDown || this.wasd.up.isDown,
+            down: this.cursors.down.isDown || this.wasd.down.isDown
+        };
+        this.player.update(dt, input);
+
+        // fuel
+        this.player.consumeFuel(this.level.fuelDrain * dt);
+        if (this.player.fuel <= 0) { this._gameOver('outOfFuel'); return; }
+
+        // distance / goal
+        this.distance += effSpeed * dt;
+
+        // spawning
+        const progress = this._goalProgress();
         this.spawnTimer += delta;
-        if (this.spawnTimer >= this.spawnInterval) {
+        const interval = Phaser.Math.Linear(this.level.spawnInterval.start, this.level.spawnInterval.min, progress);
+        if (this.spawnTimer >= interval) {
             this.spawnTimer = 0;
-            this.spawnObstacle();
-            if (Phaser.Math.Between(1, 100) <= 20) { 
-                this.spawnPickup();
+            this.spawner.spawnObstacle(this.obstacles, effSpeed);
+            if (Phaser.Math.Between(1, 100) <= 55) {
+                this.spawner.spawnPickup(this.pickups, effSpeed);
             }
         }
-                
-        // Check collisions
-        this.physics.overlap(this.player, this.pickups, this.collectPickup, null, this);
-        this.physics.overlap(this.player, this.obstacles, this.hitObstacle, null, this);
+
+        this.spawner.updateObstacles(this.obstacles, time);
+        this._cleanup(this.obstacles);
+        this._cleanup(this.pickups);
+
+        // coin magnet
+        if (this.player.isPowerupActive('pw_magnet', time)) this._applyMagnet();
+
+        // combo decay
+        if (this.combo > 0) {
+            this.comboTimer -= delta;
+            if (this.comboTimer <= 0) this.combo = 0;
+        }
+
+        // power-up expiry
+        this.player.tickPowerups(time);
+
+        // music tension scales with speed
+        this.audio.setMusicIntensity(1 + (this.gameSpeed - this.level.startSpeed) / (this.level.maxSpeed - this.level.startSpeed) * 0.5);
+
+        // goal complete?
+        if (this._isGoalMet()) { this._levelComplete(); return; }
+
+        this._updateHud();
     }
 
-    handlePlayerMovement() {
-        const body = this.player.body;
-        const speed = this.player.speed;
-        let intendedFlipX = this.player.flipX;
-        
-        // Reset velocities
-        body.setVelocity(0);
+    _goalProgress() {
+        const g = this.level.goal;
+        if (g.type === 'distance') return Phaser.Math.Clamp(this.distance / g.distance, 0, 1);
+        if (g.type === 'passengers') return Phaser.Math.Clamp(this.passengers / g.count, 0, 1);
+        return Phaser.Math.Clamp(Math.min(this.distance / g.distance, this.passengers / g.count), 0, 1);
+    }
 
-        // Horizontal movement
-        if (this.cursors.left.isDown || this.wasd.left.isDown) {
-            body.setVelocityX(-speed);
-            intendedFlipX = true;
-        } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
-            body.setVelocityX(speed);
-            intendedFlipX = false;
-        }
-        
-        if (this.player.flipX !== intendedFlipX) {
-            console.log(`Changing flipX from ${this.player.flipX} to ${intendedFlipX}`);
-            this.player.flipX = intendedFlipX;
-        }
+    _isGoalMet() {
+        const g = this.level.goal;
+        if (g.type === 'distance') return this.distance >= g.distance;
+        if (g.type === 'passengers') return this.passengers >= g.count;
+        return this.distance >= g.distance && this.passengers >= g.count;
+    }
 
-        // Vertical movement (closer/farther in pseudo-3D)
-        if (this.cursors.up.isDown || this.wasd.up.isDown) {
-            if (this.player.y > this.player.minY) {
-                body.setVelocityY(-speed);
+    _goalLabel() {
+        const g = this.level.goal;
+        if (g.type === 'passengers') return 'Passengers ' + this.passengers + '/' + g.count;
+        if (g.type === 'both') return Math.floor(this.distance) + '/' + g.distance + ' m  •  ' + this.passengers + '/' + g.count + ' pax';
+        return Math.floor(this.distance) + ' / ' + g.distance + ' m';
+    }
+
+    _cleanup(group) {
+        group.children.iterate(function (o) {
+            if (o && o.x < -90) o.destroy();
+        });
+    }
+
+    _applyMagnet() {
+        const px = this.player.x;
+        const py = this.player.y;
+        this.pickups.children.iterate(function (p) {
+            if (!p || p.getData('power')) return;
+            const d = Phaser.Math.Distance.Between(px, py, p.x, p.y);
+            if (d < 220) {
+                p.x = Phaser.Math.Linear(p.x, px, 0.12);
+                p.y = Phaser.Math.Linear(p.y, py, 0.12);
             }
-        } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
-            if (this.player.y < this.player.maxY) {
-                body.setVelocityY(speed);
-            }
-        }
-        
-        // Clamp player position to vertical bounds manually as well
-        this.player.y = Phaser.Math.Clamp(this.player.y, this.player.minY, this.player.maxY);
+        });
     }
 
-    spawnObstacle() {
-        // Spawn within the new road Y bounds (300-600 -> 310-590)
-        const y = Phaser.Math.Between(this.roadTopY + 10, this.roadBottomY - 10); 
-        const obstacle = this.physics.add.sprite(this.game.config.width + 50, y, 'pothole'); 
-        obstacle.setDisplaySize(48, 48); 
-        obstacle.setVelocityX(-this.gameSpeed); // Confirming this uses the same gameSpeed
-        obstacle.setDepth(5); 
-        obstacle.checkWorldBounds = true;
-        obstacle.outOfBoundsKill = true; 
-        this.obstacles.add(obstacle);
-    }
-
-    spawnPickup() {
-        // Spawn within the new road Y bounds (300-600 -> 310-590)
-        const y = Phaser.Math.Between(this.roadTopY + 10, this.roadBottomY - 10); 
-        const type = Phaser.Math.RND.pick(['coin', 'fuel', 'passenger']);
-        const pickup = this.physics.add.sprite(this.game.config.width + 50, y, type); 
-        pickup.setDisplaySize(32, 32); 
-        pickup.setVelocityX(-this.gameSpeed); // Confirming this uses the same gameSpeed
-        pickup.setDepth(5); 
-        pickup.checkWorldBounds = true;
-        pickup.outOfBoundsKill = true; 
-        this.pickups.add(pickup);
-        pickup.setData('type', type);
-    }
-
-    collectPickup(player, pickup) {
-        const type = pickup.getData('type');
-        switch (type) {
-            case 'coin':
-                this.score += 10;
-                break;
-            case 'fuel':
-                this.score += 5;
-                break;
-            case 'passenger':
-                this.score += 20;
-                break;
-        }
-        this.events.emit('updateScore', this.score);
+    _collectPickup(playerSprite, pickup) {
+        const key = pickup.getData('key');
+        const time = this.time.now;
         pickup.destroy();
+
+        if (pickup.getData('power')) {
+            this._activatePower(key, time);
+            return;
+        }
+
+        if (key === 'coin') {
+            this._bumpCombo();
+            const pts = 10 * this.combo;
+            this.score += pts;
+            this.sparks.explode(12, pickup.x, pickup.y);
+            this.audio.sfx('coin');
+            this._popup(pickup.x, pickup.y, '+' + pts, this.combo > 1 ? '#ffe24d' : '#ffffff');
+        } else if (key === 'passenger') {
+            this._bumpCombo();
+            this.passengers += 1;
+            const pts = 25 * this.combo;
+            this.score += pts;
+            this.sparks.explode(16, pickup.x, pickup.y);
+            this.audio.sfx('passenger');
+            this._popup(pickup.x, pickup.y, 'PAX +' + pts, '#7be06b');
+        } else if (key === 'fuel') {
+            this.player.refuel(35);
+            this.score += 5;
+            this.audio.sfx('fuel');
+            this._popup(pickup.x, pickup.y, 'FUEL', '#4ec3ff');
+        }
+        this._updateHud();
     }
 
-    hitObstacle(player, obstacle) {
-        if (this.isGameOver) return;
-        
-        console.log("Hit obstacle!");
-        this.damage += 10;
-        this.events.emit('updateDamage', this.damage); // Emit damage update event
-        
-        this.gameSpeed = Math.max(50, this.gameSpeed - 10); // Slow down more significantly
-        obstacle.destroy();
-        
-        if (this.damage >= 100) {
-            this.gameOver();
+    _activatePower(key, time) {
+        const durations = { pw_shield: 6000, pw_boost: 5000, pw_magnet: 6000 };
+        this.player.activatePowerup(key, time, durations[key] || 5000);
+        if (key === 'pw_boost') {
+            this.audio.sfx('powerup');
+            this.cameras.main.flash(180, 255, 200, 80);
+            this._popup(this.player.x, this.player.y - 40, 'BOOST!', '#ff7a3d');
+        } else if (key === 'pw_shield') {
+            this.audio.sfx('shield');
+            this._popup(this.player.x, this.player.y - 40, 'SHIELD!', '#4ec3ff');
+        } else {
+            this.audio.sfx('powerup');
+            this._popup(this.player.x, this.player.y - 40, 'MAGNET!', '#ff4d6d');
         }
     }
-    
-    gameOver() {
-        this.isGameOver = true;
-        this.physics.pause(); // Stop physics
-        this.player.setTint(0xff0000); // Indicate player is "damaged"
-        console.log("GAME OVER! Damage:", this.damage);
-        // Optional: Add text or transition to a GameOver scene here
-        // this.scene.start('GameOverScene'); 
+
+    _hitObstacle(playerSprite, obstacle) {
+        const time = this.time.now;
+
+        // shield absorbs the hit
+        if (this.player.isPowerupActive('pw_shield', time)) {
+            this.smoke.explode(10, obstacle.x, obstacle.y);
+            this.audio.sfx('shield');
+            obstacle.destroy();
+            return;
+        }
+        if (this.player.isInvulnerable(time)) return;
+
+        const dmg = this.player.applyDamage(obstacle.getData('dmg') || 12);
+        this.damage = Math.min(this.maxDamage, this.damage + dmg);
+        this.combo = 0;
+        obstacle.destroy();
+
+        // juice
+        this.cameras.main.shake(220, 0.012 + dmg * 0.0004);
+        this.smoke.explode(18, this.player.x, this.player.y);
+        this.audio.sfx('hit');
+        this.player.grantInvuln(time, 900);
+        this._flashPlayer();
+        this.gameSpeed = Math.max(this.level.startSpeed * 0.8, this.gameSpeed - 30);
+
+        this._updateHud();
+        if (this.damage >= this.maxDamage) this._gameOver('crash');
     }
-} 
+
+    _flashPlayer() {
+        const s = this.player.sprite;
+        s.setTintFill(0xffffff);
+        this.time.delayedCall(70, () => s.clearTint());
+        this.tweens.add({ targets: s, alpha: 0.3, duration: 90, yoyo: true, repeat: 4,
+            onComplete: () => s.setAlpha(1) });
+    }
+
+    _bumpCombo() {
+        this.combo = Math.min(8, this.combo + 1);
+        this.comboTimer = this.comboWindow;
+        if (this.combo > 1) this.events.emit('comboPop', this.combo);
+    }
+
+    _popup(x, y, text, color) {
+        const t = this.add.text(x, y, text, {
+            fontSize: '22px', fontStyle: 'bold', color: color || '#ffffff',
+            stroke: '#000', strokeThickness: 4
+        }).setOrigin(0.5).setDepth(9);
+        this.tweens.add({ targets: t, y: y - 50, alpha: 0, duration: 800, ease: 'Cubic.out',
+            onComplete: () => t.destroy() });
+    }
+
+    _banner(title, subtitle) {
+        const w = GameConfig.WIDTH;
+        const c = this.add.container(w / 2, 150).setDepth(20);
+        const t1 = this.add.text(0, 0, title, { fontSize: '46px', fontStyle: 'bold', color: '#ffd34d', stroke: '#000', strokeThickness: 6 }).setOrigin(0.5);
+        const t2 = this.add.text(0, 44, subtitle, { fontSize: '22px', fontStyle: 'italic', color: '#ffffff', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5);
+        c.add([t1, t2]);
+        c.setScale(0.6); c.setAlpha(0);
+        this.tweens.add({ targets: c, alpha: 1, scale: 1, duration: 400, ease: 'Back.out' });
+        this.tweens.add({ targets: c, alpha: 0, delay: 1800, duration: 500, onComplete: () => c.destroy() });
+    }
+
+    _updateHud() {
+        this.hud = {
+            score: this.score,
+            highScore: this.save.getTopScore(),
+            healthFrac: 1 - this.damage / this.maxDamage,
+            fuelFrac: this.player.fuel / this.player.fuelMax,
+            combo: this.combo,
+            levelName: this.level.name,
+            levelIndex: this.levelIndex,
+            goalLabel: this._goalLabel(),
+            goalFrac: this._goalProgress(),
+            powerups: this._activePowerups()
+        };
+    }
+
+    _activePowerups() {
+        const time = this.time.now;
+        const durs = { pw_shield: 6000, pw_boost: 5000, pw_magnet: 6000 };
+        const out = [];
+        POWERUP_KEYS.forEach((k) => {
+            if (this.player.isPowerupActive(k, time)) {
+                out.push({ key: k, frac: this.player.powerupRemaining(k, time) / durs[k] });
+            }
+        });
+        return out;
+    }
+
+    _pause() {
+        if (this.isGameOver || this.isComplete) return;
+        this.scene.pause();
+        this.scene.pause('UIScene');
+        this.audio.stopMusic();
+        this.scene.launch('PauseScene', { from: 'GameScene' });
+    }
+
+    _gameOver(reason) {
+        if (this.isGameOver) return;
+        this.isGameOver = true;
+        this.player.sprite.body.setVelocity(0);
+        this.audio.stopMusic();
+        this.audio.sfx('gameover');
+        this.cameras.main.flash(250, 120, 0, 0);
+        this.cameras.main.shake(400, 0.02);
+        this.player.sprite.setTint(0xff5555);
+
+        this.save.recordLevelBest(this.level.id, this.score);
+
+        this.time.delayedCall(1000, () => {
+            this.scene.stop('UIScene');
+            this.scene.start('GameOverScene', {
+                score: this.score, levelIndex: this.levelIndex,
+                vehicleId: this.vehicle.id, reason: reason
+            });
+        });
+    }
+
+    _levelComplete() {
+        if (this.isComplete) return;
+        this.isComplete = true;
+        this.player.sprite.body.setVelocity(0);
+        this.audio.stopMusic();
+        this.audio.sfx('levelup');
+        this.cameras.main.flash(300, 255, 230, 120);
+
+        this.save.recordLevelBest(this.level.id, this.score);
+        this.save.unlockLevel(this.levelIndex + 1);
+
+        this.time.delayedCall(900, () => {
+            this.scene.stop('UIScene');
+            this.scene.start('LevelCompleteScene', {
+                levelIndex: this.levelIndex, vehicleId: this.vehicle.id,
+                score: this.score, passengers: this.passengers,
+                distance: Math.floor(this.distance)
+            });
+        });
+    }
+
+    _onShutdown() {
+        this.audio.stopMusic();
+    }
+}
