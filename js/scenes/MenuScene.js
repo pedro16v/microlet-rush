@@ -32,13 +32,14 @@ class MenuScene extends Phaser.Scene {
         }).setOrigin(0.5);
         this.tweens.add({ targets: title, scale: 1.04, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
 
-        // play button
-        this._button(w / 2, 280, 'PLAY', () => this._start());
-        this._button(w / 2, 344, 'CONTROLS', () => this._toggleHelp());
+        // buttons
+        this._button(w / 2, 268, 'PLAY', () => this._start());
+        this._button(w / 2, 326, 'LEADERBOARD', () => { this.audio.sfx('click'); this.scene.start('LeaderboardScene'); });
+        this._button(w / 2, 384, 'CONTROLS', () => this._toggleHelp());
 
         // high score
         const top = this.save.getTopScore();
-        this.add.text(w / 2, 410, 'HIGH SCORE: ' + top, {
+        this.add.text(w / 2, 432, 'HIGH SCORE: ' + top, {
             fontSize: '22px', color: '#ffffff', stroke: '#000', strokeThickness: 3
         }).setOrigin(0.5);
 
@@ -55,6 +56,7 @@ class MenuScene extends Phaser.Scene {
         const helpText = this.add.text(w / 2, h / 2,
             '← →   steer left / right\n' +
             '↑ ↓   move near / far\n' +
+            'Touch: drag to steer\n' +
             'ESC / P   pause\n\n' +
             'Collect coins & passengers.\n' +
             'Grab fuel before you run dry.\n' +

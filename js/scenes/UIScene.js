@@ -36,6 +36,14 @@ class UIScene extends Phaser.Scene {
         // power-up icons (bottom-left)
         this.powerIcons = [];
 
+        // on-screen pause button (touch-friendly), bottom-right
+        this.pauseBtn = this.add.text(w - 18, GameConfig.HEIGHT - 14, '❚❚', {
+            fontSize: '28px', fontStyle: 'bold', color: '#ffffff', stroke: '#000', strokeThickness: 4
+        }).setOrigin(1, 1).setDepth(20).setInteractive({ useHandCursor: true });
+        this.pauseBtn.on('pointerover', () => this.pauseBtn.setScale(1.15));
+        this.pauseBtn.on('pointerout', () => this.pauseBtn.setScale(1));
+        this.pauseBtn.on('pointerdown', () => { if (this.gameScene && this.gameScene._pause) this.gameScene._pause(); });
+
         this.gameScene.events.on('comboPop', this._comboPop, this);
     }
 

@@ -61,27 +61,49 @@ class GameOverScene extends Phaser.Scene {
     _submit() {
         if (this.submitted) return;
         this.submitted = true;
-        this.save.submitScore(this.nameEntry || 'YOU', this.result.score);
+        const name = this.nameEntry || 'YOU';
+        this.save.submitScore(name, this.result.score);
+        this._onlineSubmit(name);
         this.audio.sfx('coin');
-        if (this.nameText) this.nameText.setText(this.nameEntry || 'YOU');
+        if (this.nameText) this.nameText.setText(name);
         this._showScores(300);
     }
 
     _ensureSubmitted() {
         if (this.isHigh && !this.submitted) {
-            this.save.submitScore(this.nameEntry || 'YOU', this.result.score);
+            const name = this.nameEntry || 'YOU';
+            this.save.submitScore(name, this.result.score);
+            this._onlineSubmit(name);
             this.submitted = true;
         }
     }
 
+    _onlineSubmit(name) {
+        const lvl = LEVELS[this.result.levelIndex] ? LEVELS[this.result.levelIndex].id : null;
+        // fire-and-forget; degrades to local-only when no server is reachable
+        MRLeaderboard.submit(name, this.result.score, lvl);
+    }
+
     _showScores(y) {
+        this._scoresY = y;
+        this._renderScoreList('HIGH SCORES', this.save.get('highScores'));
+        this._tryGlobal();
+    }
+
+    _renderScoreList(title, list) {
         if (this._scoreList) this._scoreList.destroy();
-        const scores = this.save.get('highScores');
-        let txt = 'HIGH SCORES\n';
-        scores.forEach((s, i) => { txt += (i + 1) + '. ' + s.name + '  —  ' + s.score + '\n'; });
-        this._scoreList = this.add.text(GameConfig.WIDTH / 2, y, txt, {
+        let txt = title + '\n';
+        (list || []).forEach((s, i) => { txt += (i + 1) + '. ' + s.name + '  —  ' + s.score + '\n'; });
+        this._scoreList = this.add.text(GameConfig.WIDTH / 2, this._scoresY, txt, {
             fontSize: '18px', color: '#ffffff', align: 'center', lineSpacing: 4
         }).setOrigin(0.5, 0);
+    }
+
+    async _tryGlobal() {
+        const rows = await MRLeaderboard.top(5);
+        if (rows && MRLeaderboard.isOnline() && this.scene.isActive()) {
+            this._renderScoreList('🌐 GLOBAL TOP', rows.map((r) => ({ name: r.name, score: r.score })));
+        }
     }
 
     _retry() {

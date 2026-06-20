@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', function () {
             BootScene,
             PreloadScene,
             MenuScene,
+            LeaderboardScene,
             VehicleSelectScene,
             GameScene,
             UIScene,
@@ -19,6 +20,8 @@ document.addEventListener('DOMContentLoaded', function () {
         ]
     });
 
-    // eslint-disable-next-line no-new
     window.game = new Phaser.Game(config);
+
+    // keep the canvas correctly sized when the mobile address bar shows/hides
+    window.addEventListener('resize', function () { window.game.scale.refresh(); });
 });

@@ -1,0 +1,14 @@
+{
+  "name": "microlet-rush",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Microlet Rush: Timor Streets - arcade driving game with an optional SQLite leaderboard",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "PORT=8080 node server.js",
+    "verify": "node tools/verify.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

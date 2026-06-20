@@ -18,12 +18,15 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            overscroll-behavior: none;
+            touch-action: none;
         }
         #game canvas {
             display: block;
             image-rendering: pixelated;
             box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
             border-radius: 4px;
+            touch-action: none; /* prevent page scroll/zoom while steering */
         }
     </style>
 </head>
@@ -39,6 +42,7 @@
     <script defer src="js/data/vehicles.js"></script>
     <script defer src="js/data/levels.js"></script>
     <script defer src="js/systems/SaveManager.js"></script>
+    <script defer src="js/systems/Leaderboard.js"></script>
     <script defer src="js/systems/AudioManager.js"></script>
     <script defer src="js/systems/Player.js"></script>
     <script defer src="js/systems/Spawner.js"></script>
@@ -47,6 +51,7 @@
     <script defer src="js/scenes/BootScene.js"></script>
     <script defer src="js/scenes/PreloadScene.js"></script>
     <script defer src="js/scenes/MenuScene.js"></script>
+    <script defer src="js/scenes/LeaderboardScene.js"></script>
     <script defer src="js/scenes/VehicleSelectScene.js"></script>
     <script defer src="js/scenes/GameScene.js"></script>
     <script defer src="js/scenes/UIScene.js"></script>

@@ -53,11 +53,27 @@ class GameScene extends Phaser.Scene {
 
         this._createParticles();
 
-        // input
+        // input (keyboard)
         this.cursors = this.input.keyboard.createCursorKeys();
         this.wasd = this.input.keyboard.addKeys({ up: 'W', down: 'S', left: 'A', right: 'D' });
         this.input.keyboard.on('keydown-ESC', () => this._pause());
         this.input.keyboard.on('keydown-P', () => this._pause());
+
+        // input (touch / pointer): relative drag = virtual joystick.
+        // Steering only starts below the HUD strip so taps on HUD/pause don't move the car.
+        this.touch = { active: false, ox: 0, oy: 0, x: 0, y: 0 };
+        this.input.on('pointerdown', (p) => {
+            if (p.y < 70) return;
+            this.touch.active = true;
+            this.touch.ox = this.touch.x = p.x;
+            this.touch.oy = this.touch.y = p.y;
+        });
+        this.input.on('pointermove', (p) => {
+            if (this.touch.active) { this.touch.x = p.x; this.touch.y = p.y; }
+        });
+        const endTouch = () => { this.touch.active = false; };
+        this.input.on('pointerup', endTouch);
+        this.input.on('pointerupoutside', endTouch);
 
         // collisions
         this.physics.add.overlap(this.player.sprite, this.pickups, this._collectPickup, null, this);
@@ -144,13 +160,20 @@ class GameScene extends Phaser.Scene {
             this.bgLayers[i].ts.tilePositionX += effSpeed * this.bgLayers[i].factor * dt;
         }
 
-        // input -> player
+        // input -> player (keyboard OR touch-drag)
         const input = {
             left: this.cursors.left.isDown || this.wasd.left.isDown,
             right: this.cursors.right.isDown || this.wasd.right.isDown,
             up: this.cursors.up.isDown || this.wasd.up.isDown,
             down: this.cursors.down.isDown || this.wasd.down.isDown
         };
+        if (this.touch.active) {
+            const dz = 14;
+            const dx = this.touch.x - this.touch.ox;
+            const dy = this.touch.y - this.touch.oy;
+            if (dx < -dz) input.left = true; else if (dx > dz) input.right = true;
+            if (dy < -dz) input.up = true; else if (dy > dz) input.down = true;
+        }
         this.player.update(dt, input);
 
         // fuel
@@ -379,6 +402,7 @@ class GameScene extends Phaser.Scene {
 
     _pause() {
         if (this.isGameOver || this.isComplete) return;
+        if (this.touch) this.touch.active = false;
         this.scene.pause();
         this.scene.pause('UIScene');
         this.audio.stopMusic();
