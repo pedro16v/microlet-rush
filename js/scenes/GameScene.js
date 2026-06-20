@@ -166,6 +166,7 @@ class GameScene extends Phaser.Scene {
       const laneIndex = car.laneIndex;
       const lanePoints = [1, 2, 5][laneIndex] || 1; // bottom=1, middle=2, top=5
       this.addPoints(lanePoints);
+      MRSound.play(this, 'sfx_capture');
       // Increase microlet speed by 5% for future spawns
       this.speedMultiplier *= 1.05;
       if (this.laneCar[laneIndex] === car) this.laneCar[laneIndex] = null;
@@ -175,6 +176,7 @@ class GameScene extends Phaser.Scene {
       this.resetPlayer();
     } else {
       this.lives -= 1;
+      MRSound.play(this, 'sfx_hit');
       this.flashHit();
       this.resetPlayer();
       if (this.lives <= 0) this.gameOver();
@@ -245,6 +247,22 @@ class GameScene extends Phaser.Scene {
       fontFamily: 'system-ui, -apple-system, Segoe UI', fontSize: 18, color: '#ffd34d'
     }).setOrigin(0.5).setDepth(1001).setInteractive({ useHandCursor: true });
     again.on('pointerdown', () => { window.location.reload(); });
+
+    // Leaderboard view (local fallback)
+    MRLeaderboard.top(10).then((rows) => {
+      const startY = panelY + 200; // below button
+      const baseY = panelY + 140; // within panel space
+      const limit = Math.min(5, rows.length);
+      for (let i = 0; i < limit; i++) {
+        const r = rows[i];
+        this.add.text(panelX + 16, baseY + i * 18, `${i+1}. ${r.name}`.padEnd(14, ' '), { fontFamily: 'system-ui, -apple-system, Segoe UI', fontSize: 14, color: '#ffffff' }).setDepth(1001);
+        this.add.text(panelX + panelW - 20, baseY + i * 18, `${r.score}`, { fontFamily: 'system-ui, -apple-system, Segoe UI', fontSize: 14, color: '#9ad3ff' }).setOrigin(1,0).setDepth(1001);
+      }
+    });
+
+    // Submit my score
+    const name = this.game.playerName || 'Player';
+    MRLeaderboard.submit(name, this.score);
   }
 
   updateHUD() {

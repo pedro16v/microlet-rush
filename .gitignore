@@ -13,3 +13,12 @@ Thumbs.db
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Node dependencies and caches
+node_modules/
+.npm-cache/
+
+# Runtime SQLite leaderboard database
+leaderboard.sqlite
+leaderboard.sqlite-wal
+leaderboard.sqlite-shm

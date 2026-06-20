@@ -34,10 +34,37 @@ class PreloadScene extends Phaser.Scene {
     this.load.image('pickup_coin', 'sprites/pickups/coin.png');
     this.load.image('pickup_fuel', 'sprites/pickups/fuel.png');
     this.load.image('pickup_pass', 'sprites/pickups/passenger.png');
+
+    // SFX
+    this.load.audio('sfx_hit', 'https://cdn.jsdelivr.net/gh/jackyzha0/sfx@master/hit1.mp3');
+    this.load.audio('sfx_capture', 'https://cdn.jsdelivr.net/gh/jackyzha0/sfx@master/coin1.mp3');
+    this.load.audio('sfx_tap', 'https://cdn.jsdelivr.net/gh/jackyzha0/sfx@master/click1.mp3');
   }
 
   create() {
-    this.scene.start('GameScene');
+    // Name prompt (localStorage)
+    const stored = localStorage.getItem('mr_player_name');
+    if (stored && stored.length >= 3) {
+      this.game.playerName = stored;
+      this.scene.start('GameScene');
+      return;
+    }
+
+    const overlay = document.getElementById('name-overlay');
+    const input = document.getElementById('name-input');
+    const button = document.getElementById('name-button');
+    overlay.style.display = 'flex';
+    const finish = () => {
+      const name = (input.value || '').trim();
+      if (!/^[a-zA-Z0-9]{3,15}$/.test(name)) return;
+      localStorage.setItem('mr_player_name', name);
+      this.game.playerName = name;
+      overlay.style.display = 'none';
+      this.sound.play('sfx_tap', { volume: 0.5 });
+      this.scene.start('GameScene');
+    };
+    button.addEventListener('click', finish);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') finish(); });
   }
 }
 

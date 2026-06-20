@@ -37,6 +37,19 @@
         pointer-events: none; /* Let canvas receive input */
       }
       .hud span { opacity: 0.95; }
+
+      /* Name overlay */
+      #name-overlay {
+        position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.7); z-index: 10000; pointer-events: auto;
+      }
+      #name-panel {
+        width: min(92vw, 420px); padding: 16px 14px; background: #111; border: 2px solid #fff;
+        color: #fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial;
+        border-radius: 8px; text-align: center;
+      }
+      #name-input { width: 100%; padding: 10px 12px; font-size: 18px; border-radius: 6px; border: 1px solid #333; }
+      #name-button { margin-top: 12px; padding: 10px 14px; font-size: 16px; font-weight: 700; background: #ffd34d; border: none; border-radius: 6px; }
     </style>
     <!-- Phaser 3 CDN -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
@@ -51,9 +64,21 @@
       <span id="hud-lives">Lives: 3</span>
     </div>
 
+    <!-- Name prompt overlay -->
+    <div id="name-overlay">
+      <div id="name-panel">
+        <div style="font-size:22px; font-weight:800; margin-bottom:10px;">Enter your name</div>
+        <input id="name-input" type="text" maxlength="15" placeholder="Your name" autocomplete="name" />
+        <div style="font-size:12px; opacity:0.8; margin-top:6px;">3–15 letters/numbers</div>
+        <button id="name-button">Start</button>
+      </div>
+    </div>
+
     <!-- Scenes and bootstrap -->
     <script src="js/scenes/PreloadScene.js"></script>
     <script src="js/scenes/GameScene.js"></script>
+    <script src="js/lib/sound.js"></script>
+    <script src="js/lib/leaderboard.js"></script>
     <script src="js/main.js"></script>
 
     <script>
