@@ -2,20 +2,64 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Microlet Rush: Timor Streets</title>
     <style>
-        body { margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #000; }
-        canvas { display: block; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: #0d0d1a;
+            overflow: hidden;
+            font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+        }
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overscroll-behavior: none;
+            touch-action: none;
+        }
+        #game canvas {
+            display: block;
+            image-rendering: pixelated;
+            box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+            border-radius: 4px;
+            touch-action: none; /* prevent page scroll/zoom while steering */
+        }
     </style>
 </head>
 <body>
     <div id="game"></div>
-    <script defer src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+
+    <!-- Phaser is vendored locally so the game is self-contained (works offline,
+         no CDN dependency). Update with: npm pack phaser@3.60.0 && extract dist/phaser.min.js -->
+    <script defer src="vendor/phaser.min.js"></script>
+
+    <!-- config + data + systems (dependencies first) -->
     <script defer src="js/config.js"></script>
+    <script defer src="js/data/vehicles.js"></script>
+    <script defer src="js/data/levels.js"></script>
+    <script defer src="js/systems/SaveManager.js"></script>
+    <script defer src="js/systems/Leaderboard.js"></script>
+    <script defer src="js/systems/AudioManager.js"></script>
+    <script defer src="js/systems/Player.js"></script>
+    <script defer src="js/systems/Spawner.js"></script>
+
+    <!-- scenes -->
+    <script defer src="js/scenes/BootScene.js"></script>
     <script defer src="js/scenes/PreloadScene.js"></script>
+    <script defer src="js/scenes/MenuScene.js"></script>
+    <script defer src="js/scenes/LeaderboardScene.js"></script>
+    <script defer src="js/scenes/VehicleSelectScene.js"></script>
     <script defer src="js/scenes/GameScene.js"></script>
     <script defer src="js/scenes/UIScene.js"></script>
+    <script defer src="js/scenes/PauseScene.js"></script>
+    <script defer src="js/scenes/LevelCompleteScene.js"></script>
+    <script defer src="js/scenes/GameOverScene.js"></script>
+
+    <!-- entry point (last) -->
     <script defer src="js/main.js"></script>
 </body>
-</html> 
+</html>
